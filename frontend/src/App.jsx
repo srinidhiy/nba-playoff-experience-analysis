@@ -29,6 +29,28 @@ function ExperienceChart({ data }) {
   );
 }
 
+function ProbabilityChart({ data }) {
+  const maxValue = Math.max(...data.map((item) => item.probability), 1);
+  return (
+    <div className="chart">
+      {data.map((item) => (
+        <div key={item.round} className="chart-row">
+          <span className="chart-label">{item.label}</span>
+          <div className="chart-bar">
+            <span
+              className="chart-fill"
+              style={{ width: `${(item.probability / maxValue) * 100}%` }}
+            />
+          </div>
+          <span className="chart-value">
+            {(item.probability * 100).toFixed(1)}%
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function App() {
   const [teamId, setTeamId] = useState("1610612747");
   const [season, setSeason] = useState(defaultSeason);
@@ -95,13 +117,34 @@ export default function App() {
               <div>
                 <p>
                   Projected round:{" "}
-                  <strong>{result.prediction?.playoff_round ?? "TBD"}</strong>
+                  <strong>{result.prediction?.label ?? "TBD"}</strong>
                 </p>
                 <p>
-                  Confidence:{" "}
-                  <strong>{result.prediction?.confidence ?? 0}</strong>
+                  Round id: <strong>{result.prediction?.round ?? "-"}</strong>
                 </p>
                 <p className="note">{result.notes}</p>
+                {result.probabilities && (
+                  <>
+                    <h3>Probability breakdown</h3>
+                    <ProbabilityChart data={result.probabilities} />
+                    <table className="summary-table">
+                      <thead>
+                        <tr>
+                          <th>Round</th>
+                          <th>Probability</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {result.probabilities.map((item) => (
+                          <tr key={`${item.round}-prob`}>
+                            <td>{item.label}</td>
+                            <td>{(item.probability * 100).toFixed(1)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                )}
               </div>
               <div>
                 <h3>Experience snapshot</h3>

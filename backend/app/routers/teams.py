@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import joblib
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 
@@ -7,7 +8,17 @@ router = APIRouter()
 
 DATA_DIR = Path(__file__).resolve().parents[3] / "data" / "processed"
 FEATURES_PATH = DATA_DIR / "team_features.csv"
+MODEL_PATH = Path(__file__).resolve().parents[3] / "artifacts" / "playoff_round_model.joblib"
 _FEATURES_CACHE: pd.DataFrame | None = None
+_MODEL_CACHE: dict | None = None
+
+ROUND_LABELS = {
+    0: "No Playoffs",
+    1: "First Round",
+    2: "Second Round",
+    3: "Conference Finals",
+    4: "Finals",
+}
 
 
 def load_features() -> pd.DataFrame | None:
@@ -18,6 +29,16 @@ def load_features() -> pd.DataFrame | None:
         return None
     _FEATURES_CACHE = pd.read_csv(FEATURES_PATH)
     return _FEATURES_CACHE
+
+
+def load_model_bundle() -> dict | None:
+    global _MODEL_CACHE
+    if _MODEL_CACHE is not None:
+        return _MODEL_CACHE
+    if not MODEL_PATH.exists():
+        return None
+    _MODEL_CACHE = joblib.load(MODEL_PATH)
+    return _MODEL_CACHE
 
 
 def build_feature_breakdown(row: pd.Series) -> list[dict]:
@@ -52,15 +73,44 @@ async def get_team_prediction(team_id: int, season: str) -> dict:
         ]
         if not match.empty:
             row = match.iloc[0]
+            model_bundle = load_model_bundle()
+            if model_bundle is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Model not trained. Run scripts/train_model.py.",
+                )
+
+            model = model_bundle["model"]
+            feature_columns = model_bundle["feature_columns"]
+            classes = [int(label) for label in model.classes_]
+            label_map = {label: ROUND_LABELS.get(label, f"Round {label}") for label in classes}
+
+            x = row[feature_columns].to_frame().T
+            predicted_round = int(model.predict(x)[0])
+            probabilities = model.predict_proba(x)[0].tolist()
+
+            probability_output = [
+                {
+                    "round": label,
+                    "label": label_map[label],
+                    "probability": float(prob),
+                }
+                for label, prob in zip(classes, probabilities)
+            ]
+
             return {
                 "team_id": team_id,
                 "season": season,
                 "prediction": {
-                    "playoff_round": "TBD",
-                    "confidence": 0.0,
+                    "round": predicted_round,
+                    "label": ROUND_LABELS.get(predicted_round, f"Round {predicted_round}"),
+                },
+                "probabilities": probability_output,
+                "features_used": {
+                    key: float(row[key]) for key in feature_columns if key in row
                 },
                 "experience_breakdown": build_feature_breakdown(row),
-                "notes": "Model pipeline not wired yet.",
+                "notes": "Prediction generated from trained model.",
             }
 
     return {
