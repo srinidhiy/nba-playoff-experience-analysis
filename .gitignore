@@ -10,6 +10,7 @@ dist/
 # Data outputs
 /data/raw/
 /data/processed/
+/artifacts/
 
 # OS
 .DS_Store

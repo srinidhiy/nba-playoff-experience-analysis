@@ -67,6 +67,9 @@ def main() -> None:
     teams_df = pd.read_csv(teams_path) if teams_path.exists() else pd.DataFrame()
     if not teams_df.empty:
         teams_df = normalize_columns(teams_df)
+        team_id_set = set(teams_df["id"].astype(int).tolist())
+    else:
+        team_id_set = set()
 
     reg_frames = [load_season_csv(season, "player_regular.csv") for season in seasons]
     playoff_frames = [
@@ -91,6 +94,27 @@ def main() -> None:
         [df for df in standings_frames if not df.empty], ignore_index=True
     )
     series_all = pd.concat([df for df in series_frames if not df.empty], ignore_index=True)
+
+    if team_id_set:
+        if "team_id" in team_all.columns:
+            team_all = team_all[team_all["team_id"].isin(team_id_set)]
+        if "team_id" in team_playoff_all.columns:
+            team_playoff_all = team_playoff_all[team_playoff_all["team_id"].isin(team_id_set)]
+        if "team_id" in standings_all.columns:
+            standings_all = standings_all[standings_all["team_id"].isin(team_id_set)]
+
+    if not team_all.empty:
+        team_all = team_all.sort_values(["season", "team_id"]).drop_duplicates(
+            subset=["season", "team_id"]
+        )
+    if not team_playoff_all.empty:
+        team_playoff_all = team_playoff_all.sort_values(["season", "team_id"]).drop_duplicates(
+            subset=["season", "team_id"]
+        )
+    if not standings_all.empty:
+        standings_all = standings_all.sort_values(["season", "team_id"]).drop_duplicates(
+            subset=["season", "team_id"]
+        )
 
     reg_all["season_start"] = reg_all["season"].map(season_start_year)
     reg_all = reg_all.sort_values(["player_id", "season_start"])
@@ -195,19 +219,36 @@ def main() -> None:
                 "team_id",
                 "conference",
                 "playoff_rank",
+                "playoffrank",
                 "conf_rank",
                 "conference_rank",
             ]
             if col in standings_all.columns
         ]
         standings_trimmed = standings_all[standings_cols].copy()
+        if "team_id" in standings_trimmed.columns:
+            standings_trimmed["team_id"] = pd.to_numeric(
+                standings_trimmed["team_id"], errors="coerce"
+            ).astype("Int64")
         seed = pd.Series([pd.NA] * len(standings_trimmed))
-        for col in ["playoff_rank", "conf_rank", "conference_rank"]:
+        for col in ["playoff_rank", "playoffrank", "conf_rank", "conference_rank"]:
             if col in standings_trimmed.columns:
                 seed = seed.fillna(standings_trimmed[col])
         standings_trimmed["seed"] = seed
+        standings_trimmed["seed"] = pd.to_numeric(
+            standings_trimmed["seed"], errors="coerce"
+        )
         standings_trimmed = standings_trimmed.drop(
-            columns=[col for col in ["playoff_rank", "conf_rank", "conference_rank"] if col in standings_trimmed.columns]
+            columns=[
+                col
+                for col in [
+                    "playoff_rank",
+                    "playoffrank",
+                    "conf_rank",
+                    "conference_rank",
+                ]
+                if col in standings_trimmed.columns
+            ]
         )
         team_features = team_features.merge(
             standings_trimmed,
