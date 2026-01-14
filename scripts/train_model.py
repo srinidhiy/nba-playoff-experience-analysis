@@ -95,7 +95,12 @@ def main() -> None:
         x_holdout = holdout_df[feature_columns]
         y_holdout = holdout_df[TARGET_COLUMN]
         holdout_pred = model.predict(x_holdout)
-        report = classification_report(y_holdout, holdout_pred, output_dict=True)
+        report = classification_report(
+            y_holdout,
+            holdout_pred,
+            output_dict=True,
+            zero_division=0,
+        )
 
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     joblib.dump(
