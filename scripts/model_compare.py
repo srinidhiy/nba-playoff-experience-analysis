@@ -38,6 +38,7 @@ CANDIDATE_FEATURES = [
     "pace",
     "off_rating",
     "def_rating",
+    "era_post_2019",
 ]
 
 EXPERIENCE_FEATURES = [
@@ -46,6 +47,7 @@ EXPERIENCE_FEATURES = [
     "avg_playoff_games_prior",
     "avg_playoff_wins_prior",
     "playoff_rounds_prior_total",
+    "era_post_2019",
 ]
 
 CONFOUNDER_FEATURES = [
@@ -57,6 +59,7 @@ CONFOUNDER_FEATURES = [
     "pace",
     "off_rating",
     "def_rating",
+    "era_post_2019",
 ]
 
 TARGET_COLUMN = "playoff_round_reached"
@@ -80,6 +83,7 @@ def prepare_dataset(df: pd.DataFrame) -> pd.DataFrame:
     df = df[df[TARGET_COLUMN].notna()]
     df = df[df[SOURCE_COLUMN] == "nba_api_series"]
     df["season_start"] = df["season"].str[:4].astype(int)
+    df["era_post_2019"] = (df["season_start"] >= 2019).astype(int)
     return df
 
 

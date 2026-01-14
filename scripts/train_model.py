@@ -35,6 +35,7 @@ CANDIDATE_FEATURES = [
     "net_rating",
     "pace",
     "seed",
+    "era_post_2019",
 ]
 
 TARGET_COLUMN = "playoff_round_reached"
@@ -55,10 +56,11 @@ def available_features(df: pd.DataFrame) -> list[str]:
 
 def prepare_dataset(df: pd.DataFrame, feature_columns: list[str]) -> pd.DataFrame:
     df = df.copy()
+    df["season_start"] = df["season"].str[:4].astype(int)
+    df["era_post_2019"] = (df["season_start"] >= 2019).astype(int)
     df = df[df[feature_columns].notna().all(axis=1)]
     df = df[df[TARGET_COLUMN].notna()]
     df = df[df[SOURCE_COLUMN] == "nba_api_series"]
-    df["season_start"] = df["season"].str[:4].astype(int)
     return df
 
 
