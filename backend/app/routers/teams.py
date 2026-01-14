@@ -11,9 +11,18 @@ router = APIRouter()
 DATA_DIR = Path(__file__).resolve().parents[3] / "data" / "processed"
 FEATURES_PATH = DATA_DIR / "team_features.csv"
 MODEL_PATH = Path(__file__).resolve().parents[3] / "artifacts" / "playoff_round_model.joblib"
+ERA_MODEL_PATHS = {
+    "2015-2018": Path(__file__).resolve().parents[3]
+    / "artifacts"
+    / "playoff_round_model_2015-2018.joblib",
+    "2019-2024": Path(__file__).resolve().parents[3]
+    / "artifacts"
+    / "playoff_round_model_2019-2024.joblib",
+}
 RAW_TEAMS_PATH = Path(__file__).resolve().parents[3] / "data" / "raw" / "nba_api" / "teams.csv"
 _FEATURES_CACHE: pd.DataFrame | None = None
 _MODEL_CACHE: dict | None = None
+_ERA_MODEL_CACHE: dict[str, dict] = {}
 
 ROUND_LABELS = {
     0: "No Playoffs",
@@ -42,6 +51,21 @@ def load_model_bundle() -> dict | None:
         return None
     _MODEL_CACHE = joblib.load(MODEL_PATH)
     return _MODEL_CACHE
+
+
+def era_for_season(season: str) -> str:
+    season_start = int(season[:4])
+    return "2019-2024" if season_start >= 2019 else "2015-2018"
+
+
+def load_era_model_bundle(era: str) -> dict | None:
+    if era in _ERA_MODEL_CACHE:
+        return _ERA_MODEL_CACHE[era]
+    path = ERA_MODEL_PATHS.get(era)
+    if path is None or not path.exists():
+        return None
+    _ERA_MODEL_CACHE[era] = joblib.load(path)
+    return _ERA_MODEL_CACHE[era]
 
 
 def build_feature_breakdown(row: pd.Series) -> list[dict]:
@@ -107,11 +131,15 @@ async def get_team_prediction(team_id: int, season: str) -> dict:
         ]
         if not match.empty:
             row = match.iloc[0]
-            model_bundle = load_model_bundle()
+            era = era_for_season(season)
+            model_bundle = load_era_model_bundle(era)
             if model_bundle is None:
                 raise HTTPException(
                     status_code=503,
-                    detail="Model not trained. Run scripts/train_model.py.",
+                    detail=(
+                        "Era model not trained. "
+                        "Run scripts/train_model_era.py."
+                    ),
                 )
 
             model = model_bundle["model"]

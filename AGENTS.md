@@ -19,6 +19,7 @@ This repo builds an NBA playoff experience analysis pipeline plus a FastAPI + Re
 - `python scripts/series_sanity.py` to summarize playoff series coverage and rounds.
 - `python scripts/train_model.py` to train the playoff round model.
 - `python scripts/score_model.py --team-id 1610612738 --season 2023-24` to score a team-season.
+- `python scripts/train_model_era.py` to train era-specific models for the API.
 - `python scripts/model_compare.py` to compare experience vs confounder vs full models.
 - `python scripts/feature_impact.py` to report model feature impact.
 - `python scripts/report_summary.py` to generate `reports/summary.md`.
