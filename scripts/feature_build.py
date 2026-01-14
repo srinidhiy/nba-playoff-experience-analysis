@@ -10,7 +10,6 @@ import pandas as pd
 
 RAW_DIR = Path(__file__).resolve().parents[1] / "data" / "raw"
 NBA_DIR = RAW_DIR / "nba_api"
-BREF_DIR = RAW_DIR / "bref"
 PROCESSED_DIR = Path(__file__).resolve().parents[1] / "data" / "processed"
 
 
@@ -54,74 +53,6 @@ def load_season_csv(season: str, name: str) -> pd.DataFrame:
     return df
 
 
-def load_bref_series() -> pd.DataFrame:
-    frames = []
-    for path in BREF_DIR.glob("playoff_series_*.csv"):
-        df = pd.read_csv(path)
-        frames.append(normalize_columns(df))
-    if not frames:
-        return pd.DataFrame()
-    return pd.concat(frames, ignore_index=True)
-
-
-def round_rank(round_name: str) -> int:
-    label = round_name.lower()
-    if "finals" in label and "conference" not in label and "division" not in label:
-        return 4
-    if "conference finals" in label or "division finals" in label:
-        return 3
-    if "semifinals" in label:
-        return 2
-    if "first round" in label or "quarterfinals" in label:
-        return 1
-    return 0
-
-
-def normalize_team_name(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", name.lower())
-
-
-def compute_team_rounds(series_df: pd.DataFrame, teams_df: pd.DataFrame) -> pd.DataFrame:
-    if series_df.empty:
-        return series_df
-
-    team_map = {
-        normalize_team_name(row["full_name"]): row["id"]
-        for _, row in teams_df.iterrows()
-    }
-    for _, row in teams_df.iterrows():
-        team_map[normalize_team_name(row["nickname"])] = row["id"]
-
-    series_df["season"] = series_df["season_end_year"].apply(
-        lambda year: f"{year - 1}-{str(year)[-2:]}"
-    )
-    series_df["round_rank"] = series_df["round"].apply(round_rank)
-    series_df["winner_id"] = series_df["winner"].map(
-        lambda name: team_map.get(normalize_team_name(name))
-    )
-    series_df["loser_id"] = series_df["loser"].map(
-        lambda name: team_map.get(normalize_team_name(name))
-    )
-
-    melted = []
-    for side in ("winner", "loser"):
-        melted.append(
-            series_df[
-                [
-                    "season",
-                    f"{side}_id",
-                    "round_rank",
-                ]
-            ].rename(columns={f"{side}_id": "team_id"})
-        )
-    team_rounds = pd.concat(melted, ignore_index=True)
-    team_rounds = team_rounds.dropna(subset=["team_id"])
-    team_rounds["team_id"] = team_rounds["team_id"].astype(int)
-    return (
-        team_rounds.groupby(["season", "team_id"], as_index=False)["round_rank"]
-        .max()
-        .rename(columns={"round_rank": "playoff_round_reached"})
-    )
 
 
 def main() -> None:
@@ -146,6 +77,7 @@ def main() -> None:
         load_season_csv(season, "team_playoffs.csv") for season in seasons
     ]
     standings_frames = [load_season_csv(season, "standings.csv") for season in seasons]
+    series_frames = [load_season_csv(season, "series_results.csv") for season in seasons]
 
     reg_all = pd.concat([df for df in reg_frames if not df.empty], ignore_index=True)
     playoff_all = pd.concat(
@@ -158,6 +90,7 @@ def main() -> None:
     standings_all = pd.concat(
         [df for df in standings_frames if not df.empty], ignore_index=True
     )
+    series_all = pd.concat([df for df in series_frames if not df.empty], ignore_index=True)
 
     reg_all["season_start"] = reg_all["season"].map(season_start_year)
     reg_all = reg_all.sort_values(["player_id", "season_start"])
@@ -325,23 +258,25 @@ def main() -> None:
             how="left",
         ).drop(columns=["id"])
 
-    series_df = load_bref_series()
-    if not series_df.empty and not teams_df.empty:
-        series_processed = compute_team_rounds(series_df, teams_df)
+    if not series_all.empty:
+        series_rounds = (
+            series_all.groupby(["season", "team_id"], as_index=False)["round"]
+            .max()
+            .rename(columns={"round": "playoff_round_reached"})
+        )
         team_features = team_features.merge(
-            series_processed, on=["season", "team_id"], how="left"
+            series_rounds, on=["season", "team_id"], how="left"
         )
         team_features["playoff_round_reached"] = team_features[
             "playoff_round_reached"
         ].fillna(0)
-        team_features["playoff_round_reached_source"] = "bref"
+        team_features["playoff_round_reached_source"] = "nba_api_series"
         team_features = team_features.sort_values(["team_id", "season"])
         team_features["playoff_rounds_prior_total"] = (
             team_features.groupby("team_id")["playoff_round_reached"].cumsum()
             - team_features["playoff_round_reached"]
         )
-
-        series_df.to_csv(PROCESSED_DIR / "playoff_series.csv", index=False)
+        series_all.to_csv(PROCESSED_DIR / "playoff_series.csv", index=False)
 
     if "playoff_round_reached" not in team_features.columns:
         team_features["playoff_round_reached"] = team_features.get(

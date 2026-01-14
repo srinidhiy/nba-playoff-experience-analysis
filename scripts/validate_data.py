@@ -8,7 +8,6 @@ from pathlib import Path
 
 RAW_DIR = Path(__file__).resolve().parents[1] / "data" / "raw"
 NBA_DIR = RAW_DIR / "nba_api"
-BREF_DIR = RAW_DIR / "bref"
 PROCESSED_DIR = Path(__file__).resolve().parents[1] / "data" / "processed"
 
 REQUIRED_FILES = {
@@ -18,6 +17,7 @@ REQUIRED_FILES = {
     "player_playoffs.csv",
     "rosters.csv",
     "standings.csv",
+    "series_results.csv",
 }
 
 
@@ -49,13 +49,6 @@ def main() -> None:
         if season_missing:
             missing[season] = season_missing
 
-    bref_missing = []
-    if BREF_DIR.exists():
-        for season in seasons:
-            path = BREF_DIR / f"playoff_series_{season}.csv"
-            if not path.exists():
-                bref_missing.append(season)
-
     processed_missing = []
     for name in ["team_features.csv", "player_experience.csv"]:
         if not (PROCESSED_DIR / name).exists():
@@ -68,12 +61,6 @@ def main() -> None:
             print(f"- {season}: {', '.join(files)}")
     else:
         print("\nAll required raw files present.")
-
-    if bref_missing:
-        print("\nMissing Basketball-Reference series files:")
-        print(", ".join(bref_missing))
-    else:
-        print("\nBasketball-Reference series files present for all seasons.")
 
     if processed_missing:
         print("\nMissing processed outputs:")

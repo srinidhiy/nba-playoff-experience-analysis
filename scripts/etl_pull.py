@@ -18,6 +18,8 @@ from nba_api.stats.endpoints import (
     leaguedashplayerstats,
     leaguedashteamstats,
     leaguestandings,
+    commonplayoffseries,
+    leaguegamefinder,
 )
 from nba_api.stats.static import teams as nba_teams
 
@@ -71,6 +73,88 @@ def fetch_player_stats(season: str, season_type: str) -> pd.DataFrame:
 def fetch_standings(season: str) -> pd.DataFrame:
     standings = leaguestandings.LeagueStandings(season=season)
     return standings.get_data_frames()[0]
+
+
+def playoff_round_from_series_id(series_id: str | int) -> int:
+    series_str = str(series_id)
+    if len(series_str) < 3:
+        return 0
+    suffix = int(series_str[-3:])
+    if 10 <= suffix <= 17:
+        return 1
+    if 20 <= suffix <= 23:
+        return 2
+    if 30 <= suffix <= 31:
+        return 3
+    if suffix == 40:
+        return 4
+    return 0
+
+
+def fetch_playoff_series_results(season: str) -> pd.DataFrame:
+    series_games = commonplayoffseries.CommonPlayoffSeries(season=season).get_data_frames()[0]
+    team_games = leaguegamefinder.LeagueGameFinder(
+        season_nullable=season,
+        season_type_nullable="Playoffs",
+        player_or_team_abbreviation="T",
+    ).get_data_frames()[0]
+
+    winners = team_games[team_games["WL"] == "W"][["GAME_ID", "TEAM_ID"]]
+    winners = winners.rename(columns={"TEAM_ID": "WINNER_TEAM_ID"})
+    series_games = series_games.merge(winners, on="GAME_ID", how="left")
+    series_games["round"] = series_games["SERIES_ID"].apply(playoff_round_from_series_id)
+
+    series_games["HOME_TEAM_ID"] = series_games["HOME_TEAM_ID"].astype(int)
+    series_games["VISITOR_TEAM_ID"] = series_games["VISITOR_TEAM_ID"].astype(int)
+
+    wins_by_team = (
+        series_games.groupby(["SERIES_ID", "WINNER_TEAM_ID"], as_index=False)
+        .size()
+        .rename(columns={"size": "team_wins", "WINNER_TEAM_ID": "TEAM_ID"})
+    )
+
+    participants = (
+        series_games.groupby("SERIES_ID", as_index=False)[
+            ["HOME_TEAM_ID", "VISITOR_TEAM_ID", "round"]
+        ]
+        .first()
+        .rename(columns={"HOME_TEAM_ID": "TEAM_A", "VISITOR_TEAM_ID": "TEAM_B"})
+    )
+
+    records = []
+    for _, row in participants.iterrows():
+        series_id = row["SERIES_ID"]
+        team_a = int(row["TEAM_A"])
+        team_b = int(row["TEAM_B"])
+        round_num = int(row["round"])
+
+        wins_a = wins_by_team.loc[
+            (wins_by_team["SERIES_ID"] == series_id) & (wins_by_team["TEAM_ID"] == team_a),
+            "team_wins",
+        ].sum()
+        wins_b = wins_by_team.loc[
+            (wins_by_team["SERIES_ID"] == series_id) & (wins_by_team["TEAM_ID"] == team_b),
+            "team_wins",
+        ].sum()
+
+        for team_id, opp_id, wins, opp_wins in [
+            (team_a, team_b, wins_a, wins_b),
+            (team_b, team_a, wins_b, wins_a),
+        ]:
+            records.append(
+                {
+                    "season": season,
+                    "series_id": series_id,
+                    "round": round_num,
+                    "team_id": team_id,
+                    "opponent_id": opp_id,
+                    "team_wins": int(wins),
+                    "opponent_wins": int(opp_wins),
+                    "is_winner": wins > opp_wins,
+                }
+            )
+
+    return pd.DataFrame(records)
 
 
 def fetch_rosters(team_ids: Iterable[int], season: str, sleep_seconds: float) -> pd.DataFrame:
@@ -138,6 +222,7 @@ def main() -> None:
     parser.add_argument("--include-bref", action="store_true")
     parser.add_argument("--only-standings", action="store_true")
     parser.add_argument("--only-bref", action="store_true")
+    parser.add_argument("--only-series", action="store_true")
     args = parser.parse_args()
 
     NBA_DIR.mkdir(parents=True, exist_ok=True)
@@ -167,7 +252,7 @@ def main() -> None:
         season_dir = NBA_DIR / season
         season_dir.mkdir(parents=True, exist_ok=True)
 
-        if not args.only_standings and not args.only_bref:
+        if not args.only_standings and not args.only_bref and not args.only_series:
             team_regular = fetch_team_stats(season, "Regular Season")
             write_dataframe(team_regular, season_dir / "team_regular.csv")
             time.sleep(args.sleep)
@@ -184,14 +269,20 @@ def main() -> None:
             write_dataframe(player_playoffs, season_dir / "player_playoffs.csv")
             time.sleep(args.sleep)
 
-        if not args.only_bref:
+        if not args.only_bref and not args.only_series:
             standings = fetch_standings(season)
             write_dataframe(standings, season_dir / "standings.csv")
             time.sleep(args.sleep)
 
-        if not args.only_standings and not args.only_bref:
+        if not args.only_standings and not args.only_bref and not args.only_series:
             rosters = fetch_rosters(team_ids, season, args.sleep)
             write_dataframe(rosters, season_dir / "rosters.csv")
+
+        if not args.only_standings and not args.only_bref:
+            series_results = fetch_playoff_series_results(season)
+            if not series_results.empty:
+                write_dataframe(series_results, season_dir / "series_results.csv")
+                time.sleep(args.sleep)
 
         if (args.include_bref or args.only_bref) and not args.only_standings:
             end_year = int(season.split("-")[0]) + 1
