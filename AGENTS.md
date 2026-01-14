@@ -16,6 +16,7 @@ This repo builds an NBA playoff experience analysis pipeline plus a FastAPI + Re
 - `python scripts/etl_pull.py --start-year 1996` to pull raw data.
 - `python scripts/feature_build.py` to generate `data/processed/team_features.csv`.
 - `python scripts/validate_data.py` to verify raw/processed data completeness.
+- `python scripts/series_sanity.py` to summarize playoff series coverage and rounds.
 
 ## Coding Style & Naming Conventions
 - Python: 4-space indentation, snake_case for files/functions.
