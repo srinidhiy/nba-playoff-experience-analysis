@@ -22,6 +22,7 @@ This repo builds an NBA playoff experience analysis pipeline plus a FastAPI + Re
 - `python scripts/model_compare.py` to compare experience vs confounder vs full models.
 - `python scripts/feature_impact.py` to report model feature impact.
 - `python scripts/report_summary.py` to generate `reports/summary.md`.
+- `python scripts/error_analysis.py` to write confusion matrix and per-round recall.
 
 ## Coding Style & Naming Conventions
 - Python: 4-space indentation, snake_case for files/functions.

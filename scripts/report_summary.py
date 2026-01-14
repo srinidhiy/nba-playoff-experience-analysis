@@ -96,6 +96,23 @@ def main() -> None:
         ]
         table = pd.DataFrame(rows)
         lines.append(table.to_markdown(index=False))
+
+        era_a = [year for year in summary.keys() if 2015 <= int(year) <= 2018]
+        era_b = [year for year in summary.keys() if int(year) >= 2019]
+        if era_a or era_b:
+            lines.extend(["", "## Era segmentation"])
+            if era_a:
+                avg_a = sum(summary[str(year)]["accuracy"] for year in era_a) / len(era_a)
+                within_a = sum(summary[str(year)]["within_one_round"] for year in era_a) / len(era_a)
+                lines.append(
+                    f"- 2015-2018 avg accuracy {avg_a:.3f}, within one round {within_a:.3f}."
+                )
+            if era_b:
+                avg_b = sum(summary[str(year)]["accuracy"] for year in era_b) / len(era_b)
+                within_b = sum(summary[str(year)]["within_one_round"] for year in era_b) / len(era_b)
+                lines.append(
+                    f"- 2019-2024 avg accuracy {avg_b:.3f}, within one round {within_b:.3f}."
+                )
     else:
         lines.append("No per-season summary found. Run `python scripts/train_model.py`.")
 
