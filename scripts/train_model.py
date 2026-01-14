@@ -146,6 +146,18 @@ def main() -> None:
         json.dumps(metrics, indent=2)
     )
 
+    if season_summary:
+        summary_rows = [
+            {"season_start": season, **values} for season, values in season_summary.items()
+        ]
+        summary_df = pd.DataFrame(summary_rows).sort_values("season_start")
+        summary_df["accuracy"] = summary_df["accuracy"].map(lambda x: f"{x:.3f}")
+        (ARTIFACTS_DIR / "season_accuracy.csv").write_text(
+            summary_df.to_csv(index=False)
+        )
+        print("\nPer-season accuracy:")
+        print(summary_df.to_string(index=False))
+
     print("Model trained. Metrics saved to artifacts/playoff_round_metrics.json")
 
 
