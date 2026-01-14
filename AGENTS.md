@@ -21,6 +21,7 @@ This repo builds an NBA playoff experience analysis pipeline plus a FastAPI + Re
 - `python scripts/score_model.py --team-id 1610612738 --season 2023-24` to score a team-season.
 - `python scripts/model_compare.py` to compare experience vs confounder vs full models.
 - `python scripts/feature_impact.py` to report model feature impact.
+- `python scripts/report_summary.py` to generate `reports/summary.md`.
 
 ## Coding Style & Naming Conventions
 - Python: 4-space indentation, snake_case for files/functions.
