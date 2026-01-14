@@ -96,9 +96,9 @@ async def get_metadata() -> dict:
 async def get_team_prediction(team_id: int, season: str) -> dict:
     season = season.strip()
     if re.match(r"^\d{4}-\d{4}$", season):
-        season = f\"{season[:4]}-{season[-2:]}\"
+        season = f"{season[:4]}-{season[-2:]}"
     if not re.match(r"^\d{4}-\d{2}$", season):
-        raise HTTPException(status_code=400, detail=\"Season must look like 2023-24\")
+        raise HTTPException(status_code=400, detail="Season must look like 2023-24")
 
     features_df = load_features()
     if features_df is not None:
