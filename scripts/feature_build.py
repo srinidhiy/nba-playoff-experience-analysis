@@ -185,7 +185,7 @@ def main() -> None:
                 "avg_seasons_in_league": weighted_avg(df, "seasons_in_league"),
                 "avg_playoff_games_prior": weighted_avg(df, "playoff_games_prior"),
                 "avg_playoff_wins_prior": weighted_avg(df, "playoff_wins_prior"),
-                "injury_games_missed": df["games_missed"].sum(),
+                "injury_games_missed": float((df["games_missed"] * df["weight"]).sum()),
                 "roster_continuity": (
                     df.loc[df["was_on_team_prev"], "min"].sum()
                     / max(df["min"].sum(), 1)
