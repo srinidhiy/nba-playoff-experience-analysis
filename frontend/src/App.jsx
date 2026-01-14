@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const defaultSeason = "2023-24";
 
@@ -52,11 +52,41 @@ function ProbabilityChart({ data }) {
 }
 
 export default function App() {
-  const [teamId, setTeamId] = useState("1610612747");
+  const [teamId, setTeamId] = useState("");
   const [season, setSeason] = useState(defaultSeason);
+  const [teams, setTeams] = useState([]);
+  const [seasons, setSeasons] = useState([]);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [metaLoading, setMetaLoading] = useState(true);
+
+  const loadMeta = async () => {
+    setMetaLoading(true);
+    try {
+      const response = await fetch("/teams/meta");
+      if (!response.ok) {
+        throw new Error("Meta request failed");
+      }
+      const payload = await response.json();
+      setTeams(payload.teams ?? []);
+      setSeasons(payload.seasons ?? []);
+      if (!teamId && payload.teams?.length) {
+        setTeamId(String(payload.teams[0].id));
+      }
+      if (payload.seasons?.length) {
+        setSeason(payload.seasons[payload.seasons.length - 1]);
+      }
+    } catch (err) {
+      setError("Unable to load teams/seasons metadata.");
+    } finally {
+      setMetaLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMeta();
+  }, []);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -81,28 +111,49 @@ export default function App() {
       <header className="hero">
         <h1>Playoff Experience Predictor</h1>
         <p>
-          Explore how roster experience, age, and playoff depth relate to
-          postseason outcomes.
+          Model-based projections using experience, age, and prior playoff depth.
+        </p>
+        <p className="note">
+          For past seasons, this is a retrospective model estimate using that
+          season’s features.
         </p>
       </header>
 
       <section className="panel">
         <form onSubmit={handleSubmit} className="form">
           <label>
-            Team ID
-            <input
+            Team
+            <select
               value={teamId}
               onChange={(event) => setTeamId(event.target.value)}
-              placeholder="1610612747"
-            />
+              disabled={metaLoading}
+            >
+              <option value="" disabled>
+                {metaLoading ? "Loading teams..." : "Select a team"}
+              </option>
+              {teams.map((team) => (
+                <option key={team.id} value={team.id}>
+                  {team.full_name}
+                </option>
+              ))}
+            </select>
           </label>
           <label>
             Season
-            <input
+            <select
               value={season}
               onChange={(event) => setSeason(event.target.value)}
-              placeholder="2023-24"
-            />
+              disabled={metaLoading}
+            >
+              <option value="" disabled>
+                {metaLoading ? "Loading seasons..." : "Select a season"}
+              </option>
+              {seasons.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
           </label>
           <button type="submit" disabled={loading}>
             {loading ? "Loading..." : "Get prediction"}

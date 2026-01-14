@@ -9,6 +9,7 @@ router = APIRouter()
 DATA_DIR = Path(__file__).resolve().parents[3] / "data" / "processed"
 FEATURES_PATH = DATA_DIR / "team_features.csv"
 MODEL_PATH = Path(__file__).resolve().parents[3] / "artifacts" / "playoff_round_model.joblib"
+RAW_TEAMS_PATH = Path(__file__).resolve().parents[3] / "data" / "raw" / "nba_api" / "teams.csv"
 _FEATURES_CACHE: pd.DataFrame | None = None
 _MODEL_CACHE: dict | None = None
 
@@ -59,6 +60,34 @@ def build_feature_breakdown(row: pd.Series) -> list[dict]:
                 continue
             breakdown.append({"key": key, "label": label, "value": float(value)})
     return breakdown
+
+
+@router.get("/meta")
+async def get_metadata() -> dict:
+    features_df = load_features()
+    if features_df is None or features_df.empty:
+        raise HTTPException(status_code=503, detail="Feature data not available.")
+
+    seasons = sorted(features_df["season"].dropna().unique().tolist())
+    teams = []
+    if RAW_TEAMS_PATH.exists():
+        teams_df = pd.read_csv(RAW_TEAMS_PATH)
+        teams = (
+            teams_df[["id", "full_name", "abbreviation"]]
+            .dropna()
+            .sort_values("full_name")
+            .to_dict(orient="records")
+        )
+    else:
+        team_meta = (
+            features_df[["team_id", "full_name", "abbreviation"]]
+            .dropna(subset=["team_id", "full_name"])
+            .drop_duplicates(subset=["team_id"])
+            .sort_values("full_name")
+        )
+        teams = team_meta.rename(columns={"team_id": "id"}).to_dict(orient="records")
+
+    return {"seasons": seasons, "teams": teams}
 
 
 @router.get("/{team_id}/season/{season}")
