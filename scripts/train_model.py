@@ -39,6 +39,7 @@ CANDIDATE_FEATURES = [
 
 TARGET_COLUMN = "playoff_round_reached"
 SOURCE_COLUMN = "playoff_round_reached_source"
+EVAL_WINDOW_YEARS = 10
 
 
 def load_features() -> pd.DataFrame:
@@ -81,8 +82,9 @@ def main() -> None:
     df = prepare_dataset(df, feature_columns)
 
     latest_season = df["season_start"].max()
-    train_df = df[df["season_start"] < latest_season]
-    holdout_df = df[df["season_start"] == latest_season]
+    eval_start = latest_season - (EVAL_WINDOW_YEARS - 1)
+    train_df = df[df["season_start"] < eval_start]
+    holdout_df = df[df["season_start"] >= eval_start]
 
     x_train = train_df[feature_columns]
     y_train = train_df[TARGET_COLUMN]
@@ -91,6 +93,7 @@ def main() -> None:
     model.fit(x_train, y_train)
 
     report = {}
+    season_reports = {}
     if not holdout_df.empty:
         x_holdout = holdout_df[feature_columns]
         y_holdout = holdout_df[TARGET_COLUMN]
@@ -101,6 +104,17 @@ def main() -> None:
             output_dict=True,
             zero_division=0,
         )
+
+        for season, season_df in holdout_df.groupby("season_start"):
+            x_season = season_df[feature_columns]
+            y_season = season_df[TARGET_COLUMN]
+            season_pred = model.predict(x_season)
+            season_reports[int(season)] = classification_report(
+                y_season,
+                season_pred,
+                output_dict=True,
+                zero_division=0,
+            )
 
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     joblib.dump(
@@ -114,10 +128,13 @@ def main() -> None:
 
     metrics = {
         "latest_season": int(latest_season),
+        "eval_window_years": int(EVAL_WINDOW_YEARS),
+        "eval_start": int(eval_start),
         "rows_train": int(len(train_df)),
         "rows_holdout": int(len(holdout_df)),
         "features": feature_columns,
         "classification_report": report,
+        "season_reports": season_reports,
     }
     (ARTIFACTS_DIR / "playoff_round_metrics.json").write_text(
         json.dumps(metrics, indent=2)
