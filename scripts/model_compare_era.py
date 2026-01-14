@@ -59,16 +59,21 @@ def build_pipeline(feature_columns: list[str]) -> Pipeline:
     return Pipeline([("prep", preprocessor), ("clf", classifier)])
 
 
-def evaluate(df: pd.DataFrame, feature_columns: list[str]) -> dict:
-    x = df[feature_columns]
-    y = df[TARGET_COLUMN]
+def evaluate(
+    train_df: pd.DataFrame, holdout_df: pd.DataFrame, feature_columns: list[str]
+) -> dict:
+    x_train = train_df[feature_columns]
+    y_train = train_df[TARGET_COLUMN]
+    x_holdout = holdout_df[feature_columns]
+    y_holdout = holdout_df[TARGET_COLUMN]
+
     model = build_pipeline(feature_columns)
-    model.fit(x, y)
-    pred = model.predict(x)
-    report = classification_report(y, pred, output_dict=True, zero_division=0)
+    model.fit(x_train, y_train)
+    pred = model.predict(x_holdout)
+    report = classification_report(y_holdout, pred, output_dict=True, zero_division=0)
     return {
-        "accuracy": float((pred == y).mean()),
-        "within_one_round": float((abs(pred - y) <= 1).mean()),
+        "accuracy": float((pred == y_holdout).mean()),
+        "within_one_round": float((abs(pred - y_holdout) <= 1).mean()),
         "report": report,
     }
 
@@ -83,17 +88,24 @@ def main() -> None:
         raise ValueError("No available features found.")
 
     results = {}
-    for label, mask in {
-        "2015-2018": df["season_start"].between(2015, 2018),
-        "2019-2024": df["season_start"].between(2019, 2024),
-    }.items():
-        subset = df[mask].dropna(subset=feature_columns)
-        if subset.empty:
+    eras = {
+        "2015-2018": (2015, 2018),
+        "2019-2024": (2019, 2024),
+    }
+    for label, (start, end) in eras.items():
+        subset = df[df["season_start"].between(start, end)].dropna(
+            subset=feature_columns
+        )
+        train_df = subset[subset["season_start"] < end]
+        holdout_df = subset[subset["season_start"] == end]
+        if train_df.empty or holdout_df.empty:
             continue
         results[label] = {
-            "rows": int(len(subset)),
+            "train_rows": int(len(train_df)),
+            "holdout_rows": int(len(holdout_df)),
+            "holdout_season": int(end),
             "features": feature_columns,
-            **evaluate(subset, feature_columns),
+            **evaluate(train_df, holdout_df, feature_columns),
         }
 
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -110,9 +122,11 @@ def main() -> None:
         rows.append(
             {
                 "era": era,
+                "holdout_season": result.get("holdout_season"),
                 "accuracy": result["accuracy"],
                 "within_one_round": result["within_one_round"],
-                "rows": result["rows"],
+                "train_rows": result.get("train_rows", 0),
+                "holdout_rows": result.get("holdout_rows", 0),
             }
         )
     table = pd.DataFrame(rows)

@@ -55,6 +55,17 @@ def main() -> None:
         takeaways.append(
             f"- Top driver by mean |coef|: `{top.get('feature')}` (mean |coef| {top.get('mean_abs_coef', 0.0):.3f})."
         )
+    era_compare = load_json(ARTIFACTS_DIR / "model_compare_era.json")
+    if era_compare.get("results"):
+        best_era = None
+        for era, result in era_compare["results"].items():
+            candidate = (result.get("accuracy", 0.0), era)
+            if best_era is None or candidate[0] > best_era[0]:
+                best_era = candidate
+        if best_era:
+            takeaways.append(
+                f"- Best era holdout accuracy: `{best_era[1]}` ({best_era[0]:.3f})."
+            )
 
     if not takeaways:
         takeaways.append(
@@ -127,15 +138,17 @@ def main() -> None:
 
     era_compare = load_json(ARTIFACTS_DIR / "model_compare_era.json")
     if era_compare.get("results"):
-        lines.extend(["", "## Era-specific models"])
+        lines.extend(["", "## Era-specific models (holdout by era)"])
         rows = []
         for era, result in era_compare["results"].items():
             rows.append(
                 {
                     "Era": era,
+                    "Holdout Season": result.get("holdout_season"),
                     "Accuracy": f"{result['accuracy']:.3f}",
                     "Within 1 Round": f"{result['within_one_round']:.3f}",
-                    "Rows": result.get("rows", 0),
+                    "Train Rows": result.get("train_rows", 0),
+                    "Holdout Rows": result.get("holdout_rows", 0),
                 }
             )
         table = pd.DataFrame(rows)
