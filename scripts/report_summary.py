@@ -125,6 +125,31 @@ def main() -> None:
     else:
         lines.append("No feature impact results found. Run `python scripts/feature_impact.py`.")
 
+    era_compare = load_json(ARTIFACTS_DIR / "model_compare_era.json")
+    if era_compare.get("results"):
+        lines.extend(["", "## Era-specific models"])
+        rows = []
+        for era, result in era_compare["results"].items():
+            rows.append(
+                {
+                    "Era": era,
+                    "Accuracy": f"{result['accuracy']:.3f}",
+                    "Within 1 Round": f"{result['within_one_round']:.3f}",
+                    "Rows": result.get("rows", 0),
+                }
+            )
+        table = pd.DataFrame(rows)
+        lines.append(table.to_markdown(index=False))
+
+    era_impact = load_json(ARTIFACTS_DIR / "feature_impact_era.json")
+    if era_impact.get("impact"):
+        lines.extend(["", "## Era-specific feature impact"])
+        for era, rows in era_impact["impact"].items():
+            top = pd.DataFrame(rows).head(8)
+            top["mean_abs_coef"] = top["mean_abs_coef"].map(lambda x: f"{x:.3f}")
+            lines.append(f"### {era}")
+            lines.append(top[["feature", "mean_abs_coef"]].to_markdown(index=False))
+
     output = "\n".join(lines) + "\n"
     (REPORTS_DIR / "summary.md").write_text(output)
     print(f"Wrote {REPORTS_DIR / 'summary.md'}")
