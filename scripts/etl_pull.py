@@ -58,6 +58,16 @@ def fetch_team_stats(season: str, season_type: str) -> pd.DataFrame:
     stats = leaguedashteamstats.LeagueDashTeamStats(
         season=season,
         season_type_all_star=season_type,
+        measure_type_detailed_defense="Base",
+    )
+    return stats.get_data_frames()[0]
+
+
+def fetch_team_advanced_stats(season: str, season_type: str) -> pd.DataFrame:
+    stats = leaguedashteamstats.LeagueDashTeamStats(
+        season=season,
+        season_type_all_star=season_type,
+        measure_type_detailed_defense="Advanced",
     )
     return stats.get_data_frames()[0]
 
@@ -257,8 +267,16 @@ def main() -> None:
             write_dataframe(team_regular, season_dir / "team_regular.csv")
             time.sleep(args.sleep)
 
+            team_regular_adv = fetch_team_advanced_stats(season, "Regular Season")
+            write_dataframe(team_regular_adv, season_dir / "team_regular_advanced.csv")
+            time.sleep(args.sleep)
+
             team_playoffs = fetch_team_stats(season, "Playoffs")
             write_dataframe(team_playoffs, season_dir / "team_playoffs.csv")
+            time.sleep(args.sleep)
+
+            team_playoffs_adv = fetch_team_advanced_stats(season, "Playoffs")
+            write_dataframe(team_playoffs_adv, season_dir / "team_playoffs_advanced.csv")
             time.sleep(args.sleep)
 
             player_regular = fetch_player_stats(season, "Regular Season")

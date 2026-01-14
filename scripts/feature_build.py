@@ -76,8 +76,14 @@ def main() -> None:
         load_season_csv(season, "player_playoffs.csv") for season in seasons
     ]
     team_frames = [load_season_csv(season, "team_regular.csv") for season in seasons]
+    team_adv_frames = [
+        load_season_csv(season, "team_regular_advanced.csv") for season in seasons
+    ]
     team_playoff_frames = [
         load_season_csv(season, "team_playoffs.csv") for season in seasons
+    ]
+    team_playoff_adv_frames = [
+        load_season_csv(season, "team_playoffs_advanced.csv") for season in seasons
     ]
     standings_frames = [load_season_csv(season, "standings.csv") for season in seasons]
     series_frames = [load_season_csv(season, "series_results.csv") for season in seasons]
@@ -90,6 +96,12 @@ def main() -> None:
     team_playoff_all = pd.concat(
         [df for df in team_playoff_frames if not df.empty], ignore_index=True
     )
+    team_adv_all = pd.concat(
+        [df for df in team_adv_frames if not df.empty], ignore_index=True
+    )
+    team_playoff_adv_all = pd.concat(
+        [df for df in team_playoff_adv_frames if not df.empty], ignore_index=True
+    )
     standings_all = pd.concat(
         [df for df in standings_frames if not df.empty], ignore_index=True
     )
@@ -100,6 +112,10 @@ def main() -> None:
             team_all = team_all[team_all["team_id"].isin(team_id_set)]
         if "team_id" in team_playoff_all.columns:
             team_playoff_all = team_playoff_all[team_playoff_all["team_id"].isin(team_id_set)]
+        if "team_id" in team_adv_all.columns:
+            team_adv_all = team_adv_all[team_adv_all["team_id"].isin(team_id_set)]
+        if "team_id" in team_playoff_adv_all.columns:
+            team_playoff_adv_all = team_playoff_adv_all[team_playoff_adv_all["team_id"].isin(team_id_set)]
         if "team_id" in standings_all.columns:
             standings_all = standings_all[standings_all["team_id"].isin(team_id_set)]
 
@@ -109,6 +125,14 @@ def main() -> None:
         )
     if not team_playoff_all.empty:
         team_playoff_all = team_playoff_all.sort_values(["season", "team_id"]).drop_duplicates(
+            subset=["season", "team_id"]
+        )
+    if not team_adv_all.empty:
+        team_adv_all = team_adv_all.sort_values(["season", "team_id"]).drop_duplicates(
+            subset=["season", "team_id"]
+        )
+    if not team_playoff_adv_all.empty:
+        team_playoff_adv_all = team_playoff_adv_all.sort_values(["season", "team_id"]).drop_duplicates(
             subset=["season", "team_id"]
         )
     if not standings_all.empty:
@@ -198,7 +222,7 @@ def main() -> None:
     if not team_all.empty:
         team_cols = [
             col
-            for col in ["season", "team_id", "w", "l", "w_pct", "net_rating", "pace"]
+            for col in ["season", "team_id", "w", "l", "w_pct"]
             if col in team_all.columns
         ]
         team_features = team_features.merge(
@@ -209,6 +233,25 @@ def main() -> None:
         )
         team_features = team_features.rename(
             columns={"w": "team_wins", "l": "team_losses", "w_pct": "team_win_pct"}
+        )
+
+    if not team_adv_all.empty:
+        adv_cols = [
+            col
+            for col in [
+                "season",
+                "team_id",
+                "net_rating",
+                "pace",
+                "off_rating",
+                "def_rating",
+            ]
+            if col in team_adv_all.columns
+        ]
+        team_features = team_features.merge(
+            team_adv_all[adv_cols],
+            on=["season", "team_id"],
+            how="left",
         )
 
     if not standings_all.empty:
@@ -273,6 +316,26 @@ def main() -> None:
             playoff_data,
             on=["season", "team_id"],
             how="left",
+        )
+
+    if not team_playoff_adv_all.empty:
+        playoff_adv_cols = [
+            col
+            for col in [
+                "season",
+                "team_id",
+                "net_rating",
+                "pace",
+                "off_rating",
+                "def_rating",
+            ]
+            if col in team_playoff_adv_all.columns
+        ]
+        team_features = team_features.merge(
+            team_playoff_adv_all[playoff_adv_cols],
+            on=["season", "team_id"],
+            how="left",
+            suffixes=("", "_playoffs"),
         )
         team_features["made_playoffs"] = team_features["playoff_wins"].notna()
 

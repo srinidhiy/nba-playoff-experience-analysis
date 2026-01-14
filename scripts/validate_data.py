@@ -12,7 +12,9 @@ PROCESSED_DIR = Path(__file__).resolve().parents[1] / "data" / "processed"
 
 REQUIRED_FILES = {
     "team_regular.csv",
+    "team_regular_advanced.csv",
     "team_playoffs.csv",
+    "team_playoffs_advanced.csv",
     "player_regular.csv",
     "player_playoffs.csv",
     "rosters.csv",
