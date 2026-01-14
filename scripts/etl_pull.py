@@ -6,6 +6,7 @@ import argparse
 import json
 import time
 from datetime import date
+from io import StringIO
 from pathlib import Path
 from typing import Iterable
 
@@ -16,6 +17,7 @@ from nba_api.stats.endpoints import (
     commonteamroster,
     leaguedashplayerstats,
     leaguedashteamstats,
+    leaguestandings,
 )
 from nba_api.stats.static import teams as nba_teams
 
@@ -66,6 +68,11 @@ def fetch_player_stats(season: str, season_type: str) -> pd.DataFrame:
     return stats.get_data_frames()[0]
 
 
+def fetch_standings(season: str) -> pd.DataFrame:
+    standings = leaguestandings.LeagueStandings(season=season)
+    return standings.get_data_frames()[0]
+
+
 def fetch_rosters(team_ids: Iterable[int], season: str, sleep_seconds: float) -> pd.DataFrame:
     frames = []
     for team_id in team_ids:
@@ -79,7 +86,7 @@ def fetch_rosters(team_ids: Iterable[int], season: str, sleep_seconds: float) ->
 
 def _extract_bref_table(html: str, table_id: str) -> pd.DataFrame:
     try:
-        tables = pd.read_html(html, attrs={"id": table_id})
+        tables = pd.read_html(StringIO(html), attrs={"id": table_id})
         if tables:
             return tables[0]
     except ValueError:
@@ -90,7 +97,7 @@ def _extract_bref_table(html: str, table_id: str) -> pd.DataFrame:
     for comment in comments:
         if table_id in comment:
             try:
-                tables = pd.read_html(comment, attrs={"id": table_id})
+                tables = pd.read_html(StringIO(comment), attrs={"id": table_id})
                 if tables:
                     return tables[0]
             except ValueError:
@@ -129,6 +136,8 @@ def main() -> None:
     parser.add_argument("--seasons", nargs="*", help="Season labels like 2023-24")
     parser.add_argument("--sleep", type=float, default=DEFAULT_SLEEP)
     parser.add_argument("--include-bref", action="store_true")
+    parser.add_argument("--only-standings", action="store_true")
+    parser.add_argument("--only-bref", action="store_true")
     args = parser.parse_args()
 
     NBA_DIR.mkdir(parents=True, exist_ok=True)
@@ -141,8 +150,15 @@ def main() -> None:
 
     teams_df = fetch_team_list()
     write_dataframe(teams_df, NBA_DIR / "teams.csv")
-    (NBA_DIR / "config.json").write_text(
-        json.dumps({"seasons": seasons, "generated_at": date.today().isoformat()}, indent=2)
+    config_path = NBA_DIR / "config.json"
+    if config_path.exists():
+        existing = json.loads(config_path.read_text())
+        previous = set(existing.get("seasons", []))
+    else:
+        previous = set()
+    merged = sorted(previous.union(seasons))
+    config_path.write_text(
+        json.dumps({"seasons": merged, "generated_at": date.today().isoformat()}, indent=2)
     )
 
     team_ids = teams_df["id"].tolist()
@@ -151,26 +167,33 @@ def main() -> None:
         season_dir = NBA_DIR / season
         season_dir.mkdir(parents=True, exist_ok=True)
 
-        team_regular = fetch_team_stats(season, "Regular Season")
-        write_dataframe(team_regular, season_dir / "team_regular.csv")
-        time.sleep(args.sleep)
+        if not args.only_standings and not args.only_bref:
+            team_regular = fetch_team_stats(season, "Regular Season")
+            write_dataframe(team_regular, season_dir / "team_regular.csv")
+            time.sleep(args.sleep)
 
-        team_playoffs = fetch_team_stats(season, "Playoffs")
-        write_dataframe(team_playoffs, season_dir / "team_playoffs.csv")
-        time.sleep(args.sleep)
+            team_playoffs = fetch_team_stats(season, "Playoffs")
+            write_dataframe(team_playoffs, season_dir / "team_playoffs.csv")
+            time.sleep(args.sleep)
 
-        player_regular = fetch_player_stats(season, "Regular Season")
-        write_dataframe(player_regular, season_dir / "player_regular.csv")
-        time.sleep(args.sleep)
+            player_regular = fetch_player_stats(season, "Regular Season")
+            write_dataframe(player_regular, season_dir / "player_regular.csv")
+            time.sleep(args.sleep)
 
-        player_playoffs = fetch_player_stats(season, "Playoffs")
-        write_dataframe(player_playoffs, season_dir / "player_playoffs.csv")
-        time.sleep(args.sleep)
+            player_playoffs = fetch_player_stats(season, "Playoffs")
+            write_dataframe(player_playoffs, season_dir / "player_playoffs.csv")
+            time.sleep(args.sleep)
 
-        rosters = fetch_rosters(team_ids, season, args.sleep)
-        write_dataframe(rosters, season_dir / "rosters.csv")
+        if not args.only_bref:
+            standings = fetch_standings(season)
+            write_dataframe(standings, season_dir / "standings.csv")
+            time.sleep(args.sleep)
 
-        if args.include_bref:
+        if not args.only_standings and not args.only_bref:
+            rosters = fetch_rosters(team_ids, season, args.sleep)
+            write_dataframe(rosters, season_dir / "rosters.csv")
+
+        if (args.include_bref or args.only_bref) and not args.only_standings:
             end_year = int(season.split("-")[0]) + 1
             series_df = fetch_bref_playoff_series(end_year)
             if not series_df.empty:
