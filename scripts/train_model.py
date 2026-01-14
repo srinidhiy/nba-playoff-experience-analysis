@@ -69,6 +69,7 @@ def build_pipeline(feature_columns: list[str]) -> Pipeline:
     classifier = LogisticRegression(
         multi_class="multinomial",
         max_iter=2000,
+        class_weight="balanced",
     )
     return Pipeline([("prep", preprocessor), ("clf", classifier)])
 

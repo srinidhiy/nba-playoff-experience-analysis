@@ -34,6 +34,10 @@ CANDIDATE_FEATURES = [
     "team_win_pct",
     "seed",
     "playoff_rounds_prior_total",
+    "net_rating",
+    "pace",
+    "off_rating",
+    "def_rating",
 ]
 
 EXPERIENCE_FEATURES = [
@@ -49,6 +53,10 @@ CONFOUNDER_FEATURES = [
     "roster_continuity",
     "team_win_pct",
     "seed",
+    "net_rating",
+    "pace",
+    "off_rating",
+    "def_rating",
 ]
 
 TARGET_COLUMN = "playoff_round_reached"
@@ -82,6 +90,7 @@ def build_pipeline(feature_columns: list[str]) -> Pipeline:
     classifier = LogisticRegression(
         multi_class="multinomial",
         max_iter=2000,
+        class_weight="balanced",
     )
     return Pipeline([("prep", preprocessor), ("clf", classifier)])
 
