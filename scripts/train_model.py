@@ -118,6 +118,7 @@ def main() -> None:
             )
             season_summary[int(season)] = {
                 "accuracy": float((season_pred == y_season).mean()),
+                "within_one_round": float((abs(season_pred - y_season) <= 1).mean()),
                 "support": int(len(y_season)),
             }
 
@@ -152,6 +153,9 @@ def main() -> None:
         ]
         summary_df = pd.DataFrame(summary_rows).sort_values("season_start")
         summary_df["accuracy"] = summary_df["accuracy"].map(lambda x: f"{x:.3f}")
+        summary_df["within_one_round"] = summary_df["within_one_round"].map(
+            lambda x: f"{x:.3f}"
+        )
         (ARTIFACTS_DIR / "season_accuracy.csv").write_text(
             summary_df.to_csv(index=False)
         )
