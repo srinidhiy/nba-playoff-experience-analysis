@@ -10,6 +10,7 @@ import pandas as pd
 
 PROCESSED_DIR = Path(__file__).resolve().parents[1] / "data" / "processed"
 ARTIFACTS_DIR = Path(__file__).resolve().parents[1] / "artifacts"
+RAW_DIR = Path(__file__).resolve().parents[1] / "data" / "raw" / "nba_api"
 
 
 def main() -> None:
@@ -39,12 +40,23 @@ def main() -> None:
     x = row[feature_columns].to_frame().T
     prediction = int(model.predict(x)[0])
     proba = model.predict_proba(x)[0].tolist()
+    classes = [int(label) for label in model.classes_]
+
+    team_name = None
+    teams_path = RAW_DIR / "teams.csv"
+    if teams_path.exists():
+        teams_df = pd.read_csv(teams_path)
+        match_team = teams_df[teams_df["id"] == args.team_id]
+        if not match_team.empty:
+            team_name = match_team.iloc[0].get("full_name")
 
     print(
         {
             "team_id": args.team_id,
+            "team_name": team_name,
             "season": args.season,
             "predicted_round": prediction,
+            "class_labels": classes,
             "probabilities": proba,
         }
     )
