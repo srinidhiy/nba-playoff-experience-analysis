@@ -2,6 +2,8 @@ from pathlib import Path
 
 import joblib
 import pandas as pd
+import re
+
 from fastapi import APIRouter, HTTPException
 
 router = APIRouter()
@@ -92,8 +94,11 @@ async def get_metadata() -> dict:
 
 @router.get("/{team_id}/season/{season}")
 async def get_team_prediction(team_id: int, season: str) -> dict:
-    if len(season) != 9 or season[4] != "-":
-        raise HTTPException(status_code=400, detail="Season must look like 2023-24")
+    season = season.strip()
+    if re.match(r"^\d{4}-\d{4}$", season):
+        season = f\"{season[:4]}-{season[-2:]}\"
+    if not re.match(r"^\d{4}-\d{2}$", season):
+        raise HTTPException(status_code=400, detail=\"Season must look like 2023-24\")
 
     features_df = load_features()
     if features_df is not None:

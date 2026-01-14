@@ -95,12 +95,21 @@ export default function App() {
     try {
       const response = await fetch(`/teams/${teamId}/season/${season}`);
       if (!response.ok) {
-        throw new Error("Request failed");
+        let message = "Request failed";
+        try {
+          const payload = await response.json();
+          if (payload?.detail) {
+            message = payload.detail;
+          }
+        } catch (err) {
+          // Ignore response parsing errors.
+        }
+        throw new Error(message);
       }
       const payload = await response.json();
       setResult(payload);
     } catch (err) {
-      setError("Unable to fetch prediction yet. Check backend status.");
+      setError(err.message || "Unable to fetch prediction yet. Check backend status.");
     } finally {
       setLoading(false);
     }
