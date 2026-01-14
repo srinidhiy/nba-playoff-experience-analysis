@@ -94,6 +94,7 @@ def main() -> None:
 
     report = {}
     season_reports = {}
+    season_summary = {}
     if not holdout_df.empty:
         x_holdout = holdout_df[feature_columns]
         y_holdout = holdout_df[TARGET_COLUMN]
@@ -115,6 +116,10 @@ def main() -> None:
                 output_dict=True,
                 zero_division=0,
             )
+            season_summary[int(season)] = {
+                "accuracy": float((season_pred == y_season).mean()),
+                "support": int(len(y_season)),
+            }
 
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     joblib.dump(
@@ -135,6 +140,7 @@ def main() -> None:
         "features": feature_columns,
         "classification_report": report,
         "season_reports": season_reports,
+        "season_summary": season_summary,
     }
     (ARTIFACTS_DIR / "playoff_round_metrics.json").write_text(
         json.dumps(metrics, indent=2)
