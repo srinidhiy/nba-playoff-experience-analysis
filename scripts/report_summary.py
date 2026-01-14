@@ -27,8 +27,44 @@ def main() -> None:
     lines = [
         "# Analysis Summary",
         "",
-        "## Model comparison (last 10 seasons)",
+        "## Key takeaways",
     ]
+
+    takeaways = []
+    if comparison.get("results"):
+        best = None
+        for name, result in comparison["results"].items():
+            candidate = (result.get("accuracy", 0.0), name, result)
+            if best is None or candidate[0] > best[0]:
+                best = candidate
+        if best:
+            accuracy, name, result = best
+            within_one = result.get("within_one_round", 0.0)
+            takeaways.append(
+                f"- Best overall model: `{name}` (accuracy {accuracy:.3f}, within one round {within_one:.3f})."
+            )
+        exp = comparison["results"].get("experience_only")
+        conf = comparison["results"].get("confounders_only")
+        if exp and conf:
+            delta = exp.get("accuracy", 0.0) - conf.get("accuracy", 0.0)
+            takeaways.append(
+                f"- Experience-only vs confounders-only accuracy gap: {delta:.3f}."
+            )
+    if impact.get("impact"):
+        top = max(impact["impact"], key=lambda row: row.get("mean_abs_coef", 0.0))
+        takeaways.append(
+            f"- Top driver by mean |coef|: `{top.get('feature')}` (mean |coef| {top.get('mean_abs_coef', 0.0):.3f})."
+        )
+
+    if not takeaways:
+        takeaways.append(
+            "- Run the analysis scripts to populate this section with results."
+        )
+
+    lines.extend(takeaways)
+    lines.append("")
+    lines.append("## Model comparison (last 10 seasons)")
+    lines.append("")
 
     if comparison.get("results"):
         table_rows = []
