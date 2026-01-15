@@ -36,6 +36,11 @@ CANDIDATE_FEATURES = [
     "pace",
     "seed",
     "era_post_2019",
+    # Star player experience features
+    "max_playoff_games_top3",
+    "max_playoff_wins_top3",
+    "sum_playoff_games_top3",
+    "max_seasons_top3",
 ]
 
 TARGET_COLUMN = "playoff_round_reached"

@@ -16,8 +16,9 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 import joblib
 import pandas as pd
 from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -39,6 +40,11 @@ CANDIDATE_FEATURES = [
     "off_rating",
     "def_rating",
     "era_post_2019",
+    # Star player experience features
+    "max_playoff_games_top3",
+    "max_playoff_wins_top3",
+    "sum_playoff_games_top3",
+    "max_seasons_top3",
 ]
 
 EXPERIENCE_FEATURES = [
@@ -48,6 +54,11 @@ EXPERIENCE_FEATURES = [
     "avg_playoff_wins_prior",
     "playoff_rounds_prior_total",
     "era_post_2019",
+    # Star player experience features
+    "max_playoff_games_top3",
+    "max_playoff_wins_top3",
+    "sum_playoff_games_top3",
+    "max_seasons_top3",
 ]
 
 CONFOUNDER_FEATURES = [
@@ -87,15 +98,25 @@ def prepare_dataset(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def build_pipeline(feature_columns: list[str]) -> Pipeline:
+def build_pipeline(
+    feature_columns: list[str], model_type: str = "logistic"
+) -> Pipeline:
     preprocessor = ColumnTransformer(
         [("num", StandardScaler(), feature_columns)], remainder="drop"
     )
-    classifier = LogisticRegression(
-        multi_class="multinomial",
-        max_iter=2000,
-        class_weight="balanced",
-    )
+    if model_type == "gradient_boosting":
+        classifier = GradientBoostingClassifier(
+            n_estimators=100,
+            max_depth=3,
+            learning_rate=0.1,
+            random_state=42,
+        )
+    else:
+        classifier = LogisticRegression(
+            multi_class="multinomial",
+            max_iter=2000,
+            class_weight="balanced",
+        )
     return Pipeline([("prep", preprocessor), ("clf", classifier)])
 
 
@@ -111,10 +132,12 @@ def evaluate_model(
     accuracy = float((preds == y_holdout).mean())
     within_one = float((abs(preds - y_holdout) <= 1).mean())
     report = classification_report(y_holdout, preds, output_dict=True, zero_division=0)
+    cm = confusion_matrix(y_holdout, preds, labels=sorted(y_holdout.unique()))
     return {
         "accuracy": accuracy,
         "within_one_round": within_one,
         "report": report,
+        "confusion_matrix": cm.tolist(),
     }
 
 
@@ -130,41 +153,49 @@ def main() -> None:
     if holdout_df.empty or train_df.empty:
         raise ValueError("Not enough data to run comparison.")
 
-    configs = {
+    feature_configs = {
         "experience_only": available_features(df, EXPERIENCE_FEATURES),
         "confounders_only": available_features(df, CONFOUNDER_FEATURES),
         "full": available_features(df, CANDIDATE_FEATURES),
     }
 
+    model_types = ["logistic", "gradient_boosting"]
+
     results = {}
     rows = []
-    for name, features in configs.items():
+    for feature_name, features in feature_configs.items():
         if not features:
             continue
         filtered_train = train_df.dropna(subset=features)
         filtered_holdout = holdout_df.dropna(subset=features)
         if filtered_train.empty or filtered_holdout.empty:
             continue
-        model = build_pipeline(features)
-        outcome = evaluate_model(
-            model,
-            filtered_train[features],
-            filtered_train[TARGET_COLUMN],
-            filtered_holdout[features],
-            filtered_holdout[TARGET_COLUMN],
-        )
-        results[name] = {
-            "features": features,
-            **outcome,
-        }
-        rows.append(
-            {
-                "model": name,
-                "features": len(features),
-                "accuracy": outcome["accuracy"],
-                "within_one_round": outcome["within_one_round"],
+
+        for model_type in model_types:
+            config_name = f"{feature_name}_{model_type}"
+            model = build_pipeline(features, model_type=model_type)
+            outcome = evaluate_model(
+                model,
+                filtered_train[features],
+                filtered_train[TARGET_COLUMN],
+                filtered_holdout[features],
+                filtered_holdout[TARGET_COLUMN],
+            )
+            results[config_name] = {
+                "features": features,
+                "model_type": model_type,
+                **outcome,
             }
-        )
+            rows.append(
+                {
+                    "model": config_name,
+                    "model_type": model_type,
+                    "feature_set": feature_name,
+                    "num_features": len(features),
+                    "accuracy": outcome["accuracy"],
+                    "within_one_round": outcome["within_one_round"],
+                }
+            )
 
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     metrics = {
@@ -175,13 +206,25 @@ def main() -> None:
     }
     (ARTIFACTS_DIR / "model_comparison.json").write_text(json.dumps(metrics, indent=2))
 
-    table = pd.DataFrame(rows).sort_values("model")
-    table["accuracy"] = table["accuracy"].map(lambda x: f"{x:.3f}")
-    table["within_one_round"] = table["within_one_round"].map(lambda x: f"{x:.3f}")
+    table = pd.DataFrame(rows).sort_values(["feature_set", "model_type"])
+    table_display = table.copy()
+    table_display["accuracy"] = table_display["accuracy"].map(lambda x: f"{x:.3f}")
+    table_display["within_one_round"] = table_display["within_one_round"].map(
+        lambda x: f"{x:.3f}"
+    )
     (ARTIFACTS_DIR / "model_comparison.csv").write_text(table.to_csv(index=False))
 
     print("Model comparison (last 10 seasons):")
-    print(table.to_string(index=False))
+    print(table_display.to_string(index=False))
+
+    # Print summary comparison
+    print("\n--- Summary: Best model per feature set ---")
+    best_per_set = table.loc[table.groupby("feature_set")["accuracy"].idxmax()]
+    for _, row in best_per_set.iterrows():
+        print(
+            f"  {row['feature_set']}: {row['model_type']} "
+            f"(accuracy={row['accuracy']:.3f}, within_one={row['within_one_round']:.3f})"
+        )
 
 
 if __name__ == "__main__":

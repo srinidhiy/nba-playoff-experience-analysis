@@ -163,6 +163,37 @@ def main() -> None:
             lines.append(f"### {era}")
             lines.append(top[["feature", "mean_abs_coef"]].to_markdown(index=False))
 
+    # Era investigation findings
+    era_investigation = load_json(ARTIFACTS_DIR / "era_investigation.json")
+    if era_investigation.get("key_findings"):
+        lines.extend(["", "## Era investigation insights"])
+        for finding in era_investigation["key_findings"]:
+            lines.append(f"- {finding}")
+
+        era_summary = era_investigation.get("era_summary", {})
+        if era_summary.get("covid_2020"):
+            lines.append("")
+            lines.append(
+                f"**COVID bubble (2020)**: accuracy {era_summary['covid_2020'].get('accuracy', 0):.1%}"
+            )
+            lines.append(f"  - {era_summary['covid_2020'].get('note', '')}")
+
+        if era_summary.get("play_in_era_2021_plus"):
+            lines.append("")
+            play_in = era_summary["play_in_era_2021_plus"]
+            lines.append(
+                f"**Play-in era (2021+)**: avg accuracy {play_in.get('avg_accuracy', 0):.1%}"
+            )
+            lines.append(f"  - {play_in.get('note', '')}")
+
+        if era_summary.get("roster_continuity"):
+            rc = era_summary["roster_continuity"]
+            lines.append("")
+            lines.append(
+                f"**Roster continuity**: pre-2019 avg {rc.get('pre_2019_avg', 0):.3f}, "
+                f"post-2019 avg {rc.get('post_2019_avg', 0):.3f}"
+            )
+
     output = "\n".join(lines) + "\n"
     (REPORTS_DIR / "summary.md").write_text(output)
     print(f"Wrote {REPORTS_DIR / 'summary.md'}")

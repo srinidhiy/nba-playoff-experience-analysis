@@ -33,14 +33,25 @@ ROUND_LABELS = {
 }
 
 
-def load_features() -> pd.DataFrame | None:
+def load_features(force_reload: bool = False) -> pd.DataFrame | None:
     global _FEATURES_CACHE
-    if _FEATURES_CACHE is not None:
+    if _FEATURES_CACHE is not None and not force_reload:
         return _FEATURES_CACHE
     if not FEATURES_PATH.exists():
         return None
     _FEATURES_CACHE = pd.read_csv(FEATURES_PATH)
     return _FEATURES_CACHE
+
+
+@router.post("/reload")
+async def reload_data() -> dict:
+    """Reload features from disk (clears cache)."""
+    global _FEATURES_CACHE, _MODEL_CACHE, _ERA_MODEL_CACHE
+    _FEATURES_CACHE = None
+    _MODEL_CACHE = None
+    _ERA_MODEL_CACHE = {}
+    load_features(force_reload=True)
+    return {"status": "reloaded"}
 
 
 def load_model_bundle() -> dict | None:
@@ -189,4 +200,132 @@ async def get_team_prediction(team_id: int, season: str) -> dict:
             {"key": "injury_games", "label": "Injury games missed", "value": 118.0},
         ],
         "notes": "Model pipeline not wired yet.",
+    }
+
+
+@router.get("/compare/{team1_id}/{team2_id}/season/{season}")
+async def compare_teams(team1_id: int, team2_id: int, season: str) -> dict:
+    """Compare two teams head-to-head for a given season."""
+    season = season.strip()
+    if re.match(r"^\d{4}-\d{4}$", season):
+        season = f"{season[:4]}-{season[-2:]}"
+    if not re.match(r"^\d{4}-\d{2}$", season):
+        raise HTTPException(status_code=400, detail="Season must look like 2023-24")
+
+    features_df = load_features()
+    if features_df is None or features_df.empty:
+        raise HTTPException(status_code=503, detail="Feature data not available.")
+
+    team1_match = features_df[
+        (features_df["team_id"] == team1_id) & (features_df["season"] == season)
+    ]
+    team2_match = features_df[
+        (features_df["team_id"] == team2_id) & (features_df["season"] == season)
+    ]
+
+    if team1_match.empty:
+        raise HTTPException(
+            status_code=404, detail=f"Team {team1_id} not found for season {season}"
+        )
+    if team2_match.empty:
+        raise HTTPException(
+            status_code=404, detail=f"Team {team2_id} not found for season {season}"
+        )
+
+    row1 = team1_match.iloc[0]
+    row2 = team2_match.iloc[0]
+
+    era = era_for_season(season)
+    model_bundle = load_era_model_bundle(era)
+    if model_bundle is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Era model not trained. Run scripts/train_model_era.py.",
+        )
+
+    model = model_bundle["model"]
+    feature_columns = model_bundle["feature_columns"]
+    classes = [int(label) for label in model.classes_]
+    label_map = {label: ROUND_LABELS.get(label, f"Round {label}") for label in classes}
+
+    x1 = row1[feature_columns].to_frame().T
+    x2 = row2[feature_columns].to_frame().T
+
+    pred1 = int(model.predict(x1)[0])
+    pred2 = int(model.predict(x2)[0])
+    probs1 = model.predict_proba(x1)[0].tolist()
+    probs2 = model.predict_proba(x2)[0].tolist()
+
+    # Feature comparison
+    comparison_features = [
+        ("avg_age", "Avg age"),
+        ("avg_seasons_in_league", "Avg seasons"),
+        ("avg_playoff_games_prior", "Avg playoff games"),
+        ("avg_playoff_wins_prior", "Avg playoff wins"),
+        ("max_playoff_games_top3", "Star playoff games"),
+        ("team_win_pct", "Win %"),
+        ("net_rating", "Net rating"),
+        ("seed", "Seed"),
+        ("roster_continuity", "Roster continuity"),
+    ]
+
+    feature_comparison = []
+    for key, label in comparison_features:
+        if key in row1 and key in row2:
+            val1 = row1[key]
+            val2 = row2[key]
+            if pd.notna(val1) and pd.notna(val2):
+                # Determine which team has advantage
+                # For seed, lower is better; for others, context-dependent
+                if key == "seed":
+                    advantage = "team1" if val1 < val2 else ("team2" if val2 < val1 else "tie")
+                else:
+                    advantage = "team1" if val1 > val2 else ("team2" if val2 > val1 else "tie")
+
+                feature_comparison.append({
+                    "key": key,
+                    "label": label,
+                    "team1_value": float(val1),
+                    "team2_value": float(val2),
+                    "advantage": advantage,
+                })
+
+    # Calculate expected round advantage
+    expected_rounds_1 = sum(r * p for r, p in zip(classes, probs1))
+    expected_rounds_2 = sum(r * p for r, p in zip(classes, probs2))
+
+    return {
+        "season": season,
+        "team1": {
+            "team_id": team1_id,
+            "full_name": row1.get("full_name", f"Team {team1_id}"),
+            "abbreviation": row1.get("abbreviation", ""),
+            "prediction": {
+                "round": pred1,
+                "label": label_map.get(pred1, f"Round {pred1}"),
+            },
+            "probabilities": [
+                {"round": r, "label": label_map[r], "probability": p}
+                for r, p in zip(classes, probs1)
+            ],
+            "expected_round": float(expected_rounds_1),
+        },
+        "team2": {
+            "team_id": team2_id,
+            "full_name": row2.get("full_name", f"Team {team2_id}"),
+            "abbreviation": row2.get("abbreviation", ""),
+            "prediction": {
+                "round": pred2,
+                "label": label_map.get(pred2, f"Round {pred2}"),
+            },
+            "probabilities": [
+                {"round": r, "label": label_map[r], "probability": p}
+                for r, p in zip(classes, probs2)
+            ],
+            "expected_round": float(expected_rounds_2),
+        },
+        "feature_comparison": feature_comparison,
+        "advantage": "team1" if expected_rounds_1 > expected_rounds_2 else (
+            "team2" if expected_rounds_2 > expected_rounds_1 else "tie"
+        ),
     }

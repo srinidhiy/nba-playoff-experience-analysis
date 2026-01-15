@@ -146,27 +146,57 @@ def main() -> None:
 
     playoff_all["season_start"] = playoff_all["season"].map(season_start_year)
     playoff_all = playoff_all.sort_values(["player_id", "season_start"])
-    if "gp" in playoff_all.columns:
-        playoff_all["playoff_games_prior"] = (
-            playoff_all.groupby("player_id")["gp"].cumsum() - playoff_all["gp"]
+    
+    # Calculate cumulative playoff experience ending at each season
+    # We want "prior" experience = total games/wins from seasons BEFORE current
+    if not playoff_all.empty and "gp" in playoff_all.columns:
+        playoff_all["cum_games"] = playoff_all.groupby("player_id")["gp"].cumsum()
+        playoff_all["cum_wins"] = playoff_all.groupby("player_id")["w"].cumsum() if "w" in playoff_all.columns else 0
+        
+        # Get each player's cumulative stats at end of each season they played playoffs
+        player_season_totals = (
+            playoff_all.groupby(["player_id", "season_start"], as_index=False)
+            .agg({"cum_games": "max", "cum_wins": "max"})
         )
-    else:
-        playoff_all["playoff_games_prior"] = 0
-
-    if "w" in playoff_all.columns:
-        playoff_all["playoff_wins_prior"] = (
-            playoff_all.groupby("player_id")["w"].cumsum() - playoff_all["w"]
+        
+        # Shift to get "as of end of previous playoff season" - these become the priors
+        # We create a lookup: season_start -> prior experience (from previous season_start)
+        player_season_totals["next_season"] = player_season_totals["season_start"] + 1
+        prior_lookup = player_season_totals[["player_id", "next_season", "cum_games", "cum_wins"]].rename(
+            columns={"next_season": "season_start", "cum_games": "playoff_games_prior", "cum_wins": "playoff_wins_prior"}
         )
+        
+        # For seasons beyond the last playoff appearance, carry forward the total
+        # Get each player's max cumulative stats
+        player_max_totals = player_season_totals.groupby("player_id", as_index=False).agg({
+            "cum_games": "max", "cum_wins": "max", "season_start": "max"
+        }).rename(columns={"season_start": "last_playoff_season"})
+        
+        # Merge the lookup with reg_all
+        reg_all = reg_all.merge(prior_lookup, on=["player_id", "season_start"], how="left")
+        
+        # For players with no match (either never played playoffs or current season > last playoff + 1),
+        # fill with their total cumulative stats if they've played playoffs before
+        reg_all = reg_all.merge(
+            player_max_totals[["player_id", "cum_games", "cum_wins", "last_playoff_season"]], 
+            on="player_id", 
+            how="left"
+        )
+        
+        # Use cumulative totals for seasons after last playoff season
+        mask = (reg_all["playoff_games_prior"].isna()) & (reg_all["season_start"] > reg_all["last_playoff_season"])
+        reg_all.loc[mask, "playoff_games_prior"] = reg_all.loc[mask, "cum_games"]
+        reg_all.loc[mask, "playoff_wins_prior"] = reg_all.loc[mask, "cum_wins"]
+        
+        # Fill remaining NaN with 0 (players who never made playoffs)
+        reg_all["playoff_games_prior"] = reg_all["playoff_games_prior"].fillna(0)
+        reg_all["playoff_wins_prior"] = reg_all["playoff_wins_prior"].fillna(0)
+        
+        # Clean up temporary columns
+        reg_all = reg_all.drop(columns=["cum_games", "cum_wins", "last_playoff_season"], errors="ignore")
     else:
-        playoff_all["playoff_wins_prior"] = 0
-
-    playoff_prior = playoff_all[
-        ["player_id", "season", "playoff_games_prior", "playoff_wins_prior"]
-    ]
-
-    reg_all = reg_all.merge(
-        playoff_prior, on=["player_id", "season"], how="left"
-    ).fillna({"playoff_games_prior": 0, "playoff_wins_prior": 0})
+        reg_all["playoff_games_prior"] = 0
+        reg_all["playoff_wins_prior"] = 0
 
     if "min" not in reg_all.columns:
         reg_all["min"] = 0
@@ -200,6 +230,24 @@ def main() -> None:
             return 0.0
         return float((df[col] * df["weight"]).sum())
 
+    def top_n_max(df: pd.DataFrame, col: str, n: int = 3) -> float:
+        """Get max value of col among top N players by minutes."""
+        if col not in df.columns or "min" not in df.columns:
+            return 0.0
+        top_players = df.nlargest(n, "min")
+        if top_players.empty:
+            return 0.0
+        return float(top_players[col].max())
+
+    def top_n_sum(df: pd.DataFrame, col: str, n: int = 3) -> float:
+        """Get sum of col among top N players by minutes."""
+        if col not in df.columns or "min" not in df.columns:
+            return 0.0
+        top_players = df.nlargest(n, "min")
+        if top_players.empty:
+            return 0.0
+        return float(top_players[col].sum())
+
     team_features = reg_all.groupby(["season", "team_id"]).apply(
         lambda df: pd.Series(
             {
@@ -214,6 +262,11 @@ def main() -> None:
                     df.loc[df["was_on_team_prev"], "min"].sum()
                     / max(df["min"].sum(), 1)
                 ),
+                # Star player experience (top 3 by minutes)
+                "max_playoff_games_top3": top_n_max(df, "playoff_games_prior", 3),
+                "max_playoff_wins_top3": top_n_max(df, "playoff_wins_prior", 3),
+                "sum_playoff_games_top3": top_n_sum(df, "playoff_games_prior", 3),
+                "max_seasons_top3": top_n_max(df, "seasons_in_league", 3),
             }
         )
     )
